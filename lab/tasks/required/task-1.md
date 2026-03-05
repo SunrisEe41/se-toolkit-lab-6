@@ -2,7 +2,7 @@
 
 <h4>Time</h4>
 
-~75 min
+~50 min
 
 <h4>Purpose</h4>
 
@@ -35,15 +35,14 @@ The code stubs in [`backend/app/etl.py`](../../../backend/app/etl.py) contain de
 
 ## 1. Steps
 
-### 1.1. Follow the `Git workflow`
+### 1.1. Create an issue
 
-Follow the [`Git workflow`](../../../wiki/git-workflow.md) to complete this task.
+Create a `Lab Task` issue titled: `[Task] Build the Data Pipeline`
+<TODO> they should also create a branch right</TODO>
 
-### 1.2. Create a `Lab Task` issue
+> We follow the usual [`Git workflow`](../../../wiki/git-workflow.md) to complete all tasks.
 
-Title: `[Task] Build the Data Pipeline`
-
-### 1.3. Part A: Explore the API
+### 1.2. Part A: Explore the API
 
 <!-- no toc -->
 - [1.3.1. Fetch the item catalog](#131-fetch-the-item-catalog)
@@ -51,20 +50,20 @@ Title: `[Task] Build the Data Pipeline`
 - [1.3.3. Test incremental sync](#133-test-incremental-sync)
 
 > [!NOTE]
-> Before writing code, explore the autochecker API with `curl` to understand the data format.
-> The API uses HTTP Basic Auth — your email as the username and `<your-github-username><your-telegram-alias>` as the password.
+> Before writing any code, lets explore the autochecker API with `curl` to understand the data format.
+> The API uses HTTP Basic Auth — your <email> as the username and `<your-github-username><your-telegram-alias>` as the password.
 
-#### 1.3.1. Fetch the item catalog
+#### 1.2.1. Fetch the item catalog
 
 1. To fetch the lab/task catalog,
 
-   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+   run in the `VS Code Terminal`:
 
    ```terminal
-   curl -u <your-email>@innopolis.university:<your-password> https://auche.namaz.live/api/items
+   curl -u <your-email>@innopolis.university:<your-github-username><your-telegram-alias> https://auche.namaz.live/api/items
    ```
 
-   Replace `<your-email>` and `<your-password>` with your autochecker credentials (same as in [setup step 1.4.3](../setup.md#143-configure-the-autochecker-api-credentials)).
+   Replace `<your-email>` and `<your-github-username><your-telegram-alias>` with the credentials you mentioned in autochecker (same as in [setup step 1.4.3](../setup.md#143-configure-the-autochecker-api-credentials)).
 
    You should see a JSON array of lab and task objects:
 
@@ -78,12 +77,12 @@ Title: `[Task] Build the Data Pipeline`
 
    > [!NOTE]
    > Items with `"type": "lab"` are labs. Items with `"type": "task"` have a non-null `task` field and belong to the lab specified in the `lab` field.
-
-#### 1.3.2. Fetch check logs
+   > You can paste the response in an [online JSON viewer](https://jsonformatter.org/) and press beautify to view it properly.
+#### 1.2.2. Fetch check logs
 
 1. To fetch the first 5 check logs,
 
-   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+   run in the `VS Code Terminal`:
 
    ```terminal
    curl -u <your-email>@innopolis.university:<your-password> "https://auche.namaz.live/api/logs?limit=5"
@@ -123,7 +122,7 @@ Title: `[Task] Build the Data Pipeline`
 
 1. To fetch only recent logs,
 
-   [run in the `VS Code Terminal`](../../../wiki/vs-code.md#run-a-command-in-the-vs-code-terminal):
+   run in the `VS Code Terminal`:
 
    ```terminal
    curl -u <your-email>@innopolis.university:<your-password> "https://auche.namaz.live/api/logs?since=2026-03-01T00:00:00Z&limit=5"
@@ -132,7 +131,7 @@ Title: `[Task] Build the Data Pipeline`
    You should see only logs submitted after March 1st 2026.
 
    > [!NOTE]
-   > The `since` parameter enables incremental sync — you only fetch new data each time.
+   > The `since` parameter enables incremental sync — you can fetch new data each time.
    > Your pipeline will use the most recent `submitted_at` from the database as the `since` value.
 
 ### 1.4. Part B: Build the pipeline
@@ -147,7 +146,7 @@ Title: `[Task] Build the Data Pipeline`
 
 #### 1.4.1. Read the code stubs
 
-1. [Open the file](../../../wiki/vs-code.md#open-the-file):
+1. Open the file:
    [`backend/app/etl.py`](../../../backend/app/etl.py).
 
    This file contains five functions with detailed TODO comments:
@@ -160,7 +159,7 @@ Title: `[Task] Build the Data Pipeline`
    | `load_logs()` | Insert logs (with learner creation) into the database |
    | `sync()` | Orchestrate the full pipeline |
 
-2. [Open the file](../../../wiki/vs-code.md#open-the-file):
+2. Open the file:
    [`backend/app/routers/pipeline.py`](../../../backend/app/routers/pipeline.py).
 
    This file provides the `POST /pipeline/sync` endpoint that calls `sync()`.
@@ -174,10 +173,10 @@ Title: `[Task] Build the Data Pipeline`
 
 #### 1.4.2. Implement the pipeline
 
-1. Open the [coding agent](../../../wiki/coding-agents.md#what-is-a-coding-agent) in the project directory.
+1. Start the `Qwen code` coding agent in the terminal inside the project directory.
 2. Give it a prompt like:
 
-   > "Read the TODO comments in `backend/app/etl.py` and implement all five functions. Use the existing models in `backend/app/models/` and the settings in `backend/app/settings.py`. The API uses HTTP Basic Auth."
+   > "Read the TODO comments in `backend/app/etl.py` and implement all five functions. Use the existing models in `backend/app/models/` and the settings in `backend/app/settings.py`. The API uses HTTP Basic Auth. Explain to me step by step to maximize learning."
 
 3. Wait for the agent to generate the implementation.
 
