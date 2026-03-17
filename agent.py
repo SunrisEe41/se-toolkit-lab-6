@@ -314,6 +314,7 @@ def query_api(
         "-s",  # Silent mode
         "-w",
         "\n%{http_code}",  # Append status code
+        "--no-keepalive",  # Disable connection reuse
     ]
 
     # Add auth header only if auth=True
@@ -324,6 +325,9 @@ def query_api(
                 f"Authorization: Bearer {lms_api_key}",
             ]
         )
+    else:
+        # Explicitly disable auth by not sending any auth header
+        pass  # No auth headers added
 
     curl_cmd.extend(
         [
@@ -378,8 +382,12 @@ def execute_tool(tool_name: str, args: dict, config: dict = None) -> str:
             return "Error: config not provided for query_api"
         # Handle both "path" and "endpoint" arguments (LLM may use either)
         path = args.get("path") or args.get("endpoint", "")
-        # Default auth=True, but allow override
-        auth = args.get("auth", True)
+        # Handle auth parameter - convert string "False"/"True" to boolean
+        auth_raw = args.get("auth", True)
+        if isinstance(auth_raw, str):
+            auth = auth_raw.lower() != "false"
+        else:
+            auth = bool(auth_raw) if auth_raw is not None else True
         return query_api(
             method=args.get("method", "GET"),
             path=path,
