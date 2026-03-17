@@ -447,7 +447,25 @@ def call_llm(
     if result.returncode != 0:
         raise Exception(f"curl failed: {result.stderr}")
 
-    response_data = json.loads(result.stdout)
+    # Handle empty response
+    if not result.stdout.strip():
+        print("LLM API returned empty response, retrying...", file=sys.stderr)
+        # Retry once
+        result = subprocess.run(
+            curl_cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if not result.stdout.strip():
+            raise Exception("LLM API returned empty response twice")
+
+    try:
+        response_data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {e}", file=sys.stderr)
+        print(f"Response was: {result.stdout[:200]}", file=sys.stderr)
+        raise Exception(f"Invalid JSON from LLM API: {e}")
 
     return response_data
 
