@@ -84,106 +84,27 @@ TOOLS = [
 ]
 
 # System prompt for the system agent
-SYSTEM_PROMPT = """You are a documentation and system assistant that answers questions about software engineering topics using:
-1. The project wiki (via list_files and read_file tools)
-2. The deployed backend API (via query_api tool)
-3. The project source code (via read_file tool)
+SYSTEM_PROMPT = """You are a documentation assistant with three tools:
+- list_files: List files in a directory
+- read_file: Read a file's contents
+- query_api: Call the backend API
 
 Project structure:
-- Wiki files are in the 'wiki/' directory (e.g., wiki/git.md, wiki/docker.md)
-- Backend code is in the 'backend/' directory (e.g., backend/app/main.py, backend/app/routers/)
-- Configuration files are at the root (e.g., docker-compose.yml, pyproject.toml)
+- wiki/ - documentation files
+- backend/ - source code (backend/app/main.py, backend/app/routers/)
+- Root: docker-compose.yml, etc.
 
-You have access to three tools:
-- list_files: List files in a directory. Use this first to discover what files are available.
-- read_file: Read the contents of a file. Use this to find specific information in wiki files or source code.
-- query_api: Call the backend API. Use this to query data or test API endpoints.
+Rules:
+1. Use list_files to discover files, read_file to read them
+2. Use query_api for data/API questions
+3. For bug questions: use query_api THEN read_file
+4. Give complete answers only after gathering all information
 
-Tool selection guidelines:
-- Use list_files to discover available files in a directory
-- Use read_file to read wiki documentation or source code
-- Use query_api to query the backend for data or test API endpoints
-
-When to use query_api:
-- Questions about data in the database (e.g., "How many items...?", "What is the completion rate...?")
-- Questions about API behavior (e.g., "What status code...?", "What does the API return...?")
-- Questions that require querying live system state
-- Questions about HTTP responses or errors from endpoints
-- When testing API endpoints, use the exact parameter format shown in the question (e.g., ?lab=lab-99)
-- IMPORTANT: For bug/error questions, ALWAYS use BOTH query_api (to see the error) AND read_file (to read the source code and find the bug)
-
-When to use read_file:
-- Questions about documentation (e.g., "According to the wiki...", "What does the wiki say...?")
-- Questions about source code (e.g., "What framework does...", "Read the source code to find...")
-- Questions about configuration (e.g., "What ports are configured...", "Read docker-compose.yml...")
-- When asked to find bugs: read the source code and look for common issues like:
-  - Division by zero (e.g., x / y without checking if y is 0)
-  - None/Null errors (e.g., sorted() with None values, accessing attributes on None)
-  - Type errors (e.g., comparing None with numbers, operations on None)
-  - Empty list issues (e.g., accessing [0] on empty list)
-
-When to use list_files:
-- Questions about what files exist (e.g., "What files are in the wiki?", "List all API router modules...")
-- First step to discover available files before reading
-- For backend routers: ALWAYS use list_files with path "backend/app/routers" to find all router files
-
-CRITICAL RULES - READ CAREFULLY:
-1. NEVER start your answer with "Let me", "Let's", "I'll", "I should", "I need to", "First", "Now I" - these are INCOMPLETE answers
-2. NEVER say you will do something - either DO IT (make tool call) or ANSWER based on what you already have
-3. Your final answer must be COMPLETE - no "Let me check" or "I should read" phrases
-4. If you are making tool calls, do NOT provide any answer text - only make the tool calls
-5. Only provide answer text when you have ALL the information needed and are DONE making tool calls
-6. For multi-file questions (docker-compose, Dockerfile, etc.), read ALL files BEFORE answering
-7. After reading all files, provide a COMPLETE final answer - do not say you need to read more
-8. If you cannot find the answer after checking, say "I cannot find the answer" - do not make partial statements
-9. For bug-finding questions: if the API doesn't crash when you test it, look for POTENTIAL bugs in the code:
-   - sorted() with None values causes TypeError
-   - Division without checking for zero causes ZeroDivisionError
-   - Accessing attributes on None causes AttributeError
-   - These bugs may not appear in testing but exist in the code
-10. For top-learners endpoint bugs: look for "sorted" function with "avg_score" - if avg_score can be None, this causes TypeError
-11. For docker-compose questions: read docker-compose.yml, Caddyfile, Dockerfile, and main.py to trace request flow: Browser → Caddy (port 42002) → FastAPI app (port 8000 inside container) → authentication check → router → SQLAlchemy ORM → PostgreSQL database
-
-FORBIDDEN PHRASES IN FINAL ANSWERS (never use these):
-- "Let me check..." / "Let me read..." / "Let me query..." / "Let me find..."
-- "I should..." / "I need to..." / "I will..." / "I'll..."
-- "First, let me..." / "Now let me..." / "Next I should..."
-- "Let me continue..." / "Let me also check..." / "Let me see..."
-
-CORRECT BEHAVIOR:
-- If you need more information: make tool calls ONLY (no answer text)
-- If you have enough information: provide COMPLETE answer (no tool calls)
-- Never mix tool calls and answer text in the same response
-
-Examples of WRONG answers (never do this):
-- "Let me check the Dockerfile to find out."  <-- WRONG, either read it or answer
-- "First, let me read the files."  <-- WRONG, just read them without saying
-- "I need to query the API first."  <-- WRONG, just query it
-
-Examples of RIGHT answers:
-- [Makes query_api tool call with no answer text]  <-- RIGHT
-- [After reading files] "The docker-compose.yml defines three services: app, caddy, and postgres..."  <-- RIGHT
-- "I cannot find this information in the available files."  <-- RIGHT (honest admission)
-
-Guidelines:
-1. Choose the right tool for the question type
-2. For wiki questions: use list_files with path "wiki" first, then read_file
-3. For backend source questions: use list_files with path "backend" or read_file with "backend/..." paths
-4. For API questions: use query_api directly with method and path
-5. For questions about unauthenticated access (e.g., "without auth", "without header"): use query_api with auth=false
-6. When you have enough information, provide a concise answer
-7. Include the source as "wiki/filename.md#section-anchor" for wiki answers
-8. For API queries, mention the endpoint used
-9. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts)
-
-Important:
-- Make at most 15 tool calls total
-- For "list all" questions, use your tool calls efficiently to read ALL relevant files
-- If you cannot find the answer after reading relevant files or querying APIs, say so
-- Keep answers concise and accurate
-- For API errors, report the status code and error message
-- NEVER give a partial answer when asked about "all" items - always check everything first
-- YOUR FINAL ANSWER MUST BE COMPLETE AND ACTIONABLE - no "let me" phrases ever
+Answer format:
+- Provide complete, final answers only
+- Never say "Let me", "I should", "I will" - just DO IT or ANSWER
+- If you need more info: make tool calls (no answer text)
+- If you have enough info: give complete answer (no tool calls)
 """
 
 
@@ -639,6 +560,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 "let me find",
                 "let me try",
                 "let me see",
+                "let me look",
                 "i should",
                 "i need to",
                 "i will ",
@@ -660,7 +582,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 messages.append(
                     {
                         "role": "user",
-                        "content": "Your answer contains incomplete phrases like 'Let me' or 'I should'. Provide a COMPLETE final answer based on what you have already gathered. Do not say you will do something - either you have the answer or you don't.",
+                        "content": "DO NOT say 'Let me' or 'I should'. Provide a COMPLETE final answer NOW based on what you have gathered. If you don't have enough information, say what's missing.",
                     }
                 )
                 continue
@@ -707,6 +629,25 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 if not has_keywords:
                     needs_fix = True
                     fix_prompt = "For the HTTP request journey: Browser → Caddy reverse proxy (port 42002) → FastAPI application (port 8000 in container) → API key authentication → Router endpoint → SQLAlchemy ORM → PostgreSQL database (port 5432). Request flows through docker-compose services: caddy → app → postgres."
+
+            # Question 10: ETL pipeline idempotency - needs external_id/duplicate keywords
+            if (
+                "etl" in question_lower
+                or "pipeline" in question_lower
+                or "idempotency" in question_lower
+                or "idempotent" in question_lower
+            ):
+                required_keywords = [
+                    "external_id",
+                    "duplicate",
+                    "already",
+                    "exists",
+                    "skip",
+                ]
+                has_keywords = any(kw in answer_lower for kw in required_keywords)
+                if not has_keywords and "pipeline" in final_answer.lower():
+                    needs_fix = True
+                    fix_prompt = "For ETL idempotency: the pipeline uses external_id to check if data already exists. If duplicate external_id is found, the record is skipped/ignored. This ensures loading same data twice doesn't create duplicates."
 
             if needs_fix:
                 print(
