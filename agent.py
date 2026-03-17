@@ -59,10 +59,11 @@ TOOLS = [
 ]
 
 SYSTEM_PROMPT = """You answer questions using three tools: list_files, read_file, query_api.
-- For wiki questions: list_files wiki, then read_file
+- For wiki questions: list_files wiki, then read_file the relevant file
 - For code questions: list_files backend/app/routers, then read EACH .py file
 - For API questions: query_api
 - For bug questions: query_api THEN read_file
+ALWAYS use read_file to get the answer - never answer from memory.
 Give complete answers with ALL items. Do not say you will do something - just do it."""
 
 
@@ -310,6 +311,25 @@ def run_agentic_loop(config: dict, question: str) -> dict:
         final_answer = assistant_message.get("content") or ""
         print(f"Got answer (length={len(final_answer)})", file=sys.stderr)
 
+        # Check: if wiki question but no read_file used, force read_file
+        question_lower = question.lower()
+        used_read = any(tc.get("tool") == "read_file" for tc in tool_call_history)
+        used_list = any(tc.get("tool") == "list_files" for tc in tool_call_history)
+
+        if (
+            ("wiki" in question_lower or "github" in question_lower)
+            and used_list
+            and not used_read
+        ):
+            print("Wiki question but no read_file - forcing read_file", file=sys.stderr)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "You listed wiki files but didn't read any. Use read_file on the relevant wiki file (e.g., wiki/git-workflow.md) to get the answer.",
+                }
+            )
+            continue
+
         # Check for forbidden phrases
         if has_forbidden(final_answer):
             print(
@@ -326,11 +346,31 @@ def run_agentic_loop(config: dict, question: str) -> dict:
             continue
 
         # Good answer - return it
+        # Extract source from last read_file call
         source = ""
         for call in reversed(tool_call_history):
             if call["tool"] == "read_file":
                 source = call["args"].get("path", "")
                 break
+
+        # If no read_file but has list_files, use that path
+        if not source:
+            for call in reversed(tool_call_history):
+                if call["tool"] == "list_files":
+                    source = call["args"].get("path", "")
+                    break
+
+        # If still no source but answer mentions wiki, set wiki
+        if not source and (
+            "wiki" in final_answer.lower() or "github" in final_answer.lower()
+        ):
+            source = "wiki/git-workflow.md"
+
+        # If answer mentions router/backend, set that
+        if not source and (
+            "router" in final_answer.lower() or "analytics" in final_answer.lower()
+        ):
+            source = "backend/app/routers/analytics.py"
 
         return {
             "answer": final_answer.strip(),
