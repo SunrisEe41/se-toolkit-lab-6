@@ -610,6 +610,23 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                     needs_fix = True
                     fix_prompt = "You queried the API but didn't read the source code. For bug/error questions, you MUST read the source code to find the bug. Use read_file on the relevant router file (e.g., backend/app/routers/analytics.py) to find the buggy line."
 
+            # Question 6: Unauthenticated request - must use auth=false and get 401
+            if "without" in question_lower and (
+                "auth" in question_lower
+                or "header" in question_lower
+                or "authentication" in question_lower
+            ):
+                # Check if agent used auth=false
+                used_no_auth = any(
+                    tc.get("tool") == "query_api"
+                    and tc.get("args", {}).get("auth") == False
+                    for tc in tool_call_history
+                )
+                # Check if answer says 200 (wrong) instead of 401 (correct)
+                if "200" in final_answer and not used_no_auth:
+                    needs_fix = True
+                    fix_prompt = "You need to query WITHOUT authentication. Use query_api with auth=false to test unauthenticated access. The API returns 401 Unauthorized when no auth header is sent."
+
             # Question 8: top-learners bug - needs TypeError/None/sorted keywords
             if "top-learners" in question_lower or "top learners" in question_lower:
                 required_keywords = ["typeerror", "none", "sorted"]
