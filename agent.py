@@ -114,6 +114,7 @@ When to use read_file:
 When to use list_files:
 - Questions about what files exist (e.g., "What files are in the wiki?", "List all API router modules...")
 - First step to discover available files before reading
+- For backend routers: ALWAYS use list_files with path "backend/app/routers" to find all router files
 
 CRITICAL RULES FOR COMPLETE ANSWERS:
 - When asked to "list all", "find all", or "what are all" - you MUST examine EVERY relevant file
@@ -123,6 +124,11 @@ CRITICAL RULES FOR COMPLETE ANSWERS:
 - Continue reading files until you have examined ALL of them
 - Only provide your final answer after you have gathered information from ALL relevant files
 - If you see 5 router files, you must read all 5 before answering
+- IMPORTANT: Do NOT start your answer with "Let me" or "First" - these indicate you are not done
+- IMPORTANT: Your response should ONLY contain tool calls until you have read ALL files
+- IMPORTANT: Only when you have read ALL relevant files, provide the complete final answer
+- NEVER give a partial answer - the user wants complete information about ALL items
+- AFTER reading all files, you MUST provide a text answer summarizing what you found
 
 Guidelines:
 1. Choose the right tool for the question type
@@ -557,8 +563,26 @@ def run_agentic_loop(config: dict, question: str) -> dict:
             continue
         else:
             # No tool calls - LLM provided final answer
-            final_answer = assistant_message.get("content", "")
-            print(f"LLM provided final answer", file=sys.stderr)
+            final_answer = assistant_message.get("content") or ""
+            print(
+                f"LLM provided final answer (length={len(final_answer)})",
+                file=sys.stderr,
+            )
+
+            # If answer is empty but we have tool calls, the LLM might not be done
+            # In this case, prompt it to provide the answer
+            if not final_answer.strip() and tool_call_history:
+                print(
+                    "Empty answer detected, prompting LLM to provide final answer...",
+                    file=sys.stderr,
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Please provide your final answer based on the information you have gathered. Summarize all findings.",
+                    }
+                )
+                continue
 
             # Extract source
             source = extract_source(final_answer, tool_call_history)
