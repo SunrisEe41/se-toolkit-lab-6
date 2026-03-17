@@ -73,6 +73,10 @@ TOOLS = [
                     "type": "string",
                     "description": "Optional JSON request body for POST/PUT requests",
                 },
+                "auth": {
+                    "type": "boolean",
+                    "description": "Whether to include authentication header. Default true. Set to false to test unauthenticated endpoints.",
+                },
             },
             "required": ["method", "path"],
         },
@@ -135,10 +139,11 @@ Guidelines:
 2. For wiki questions: use list_files with path "wiki" first, then read_file
 3. For backend source questions: use list_files with path "backend" or read_file with "backend/..." paths
 4. For API questions: use query_api directly with method and path
-5. When you have enough information, provide a concise answer
-6. Include the source as "wiki/filename.md#section-anchor" for wiki answers
-7. For API queries, mention the endpoint used
-8. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts)
+5. For questions about unauthenticated access (e.g., "without auth", "without header"): use query_api with auth=false
+6. When you have enough information, provide a concise answer
+7. Include the source as "wiki/filename.md#section-anchor" for wiki answers
+8. For API queries, mention the endpoint used
+9. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts)
 
 Important:
 - Make at most 15 tool calls total
@@ -277,16 +282,18 @@ def query_api(
     method: str,
     path: str,
     body: str = None,
+    auth: bool = True,
     api_base_url: str = None,
     lms_api_key: str = None,
 ) -> str:
     """
-    Call the backend API with authentication.
+    Call the backend API with optional authentication.
 
     Args:
         method: HTTP method (GET, POST, etc.)
         path: API path (e.g., '/items/')
         body: Optional JSON request body
+        auth: Whether to include authentication header (default True)
         api_base_url: Base URL of the API
         lms_api_key: API key for authentication
 
@@ -295,7 +302,7 @@ def query_api(
     """
     url = f"{api_base_url}{path}"
 
-    print(f"query_api: {method} {url}", file=sys.stderr)
+    print(f"query_api: {method} {url} (auth={auth})", file=sys.stderr)
 
     # Build curl command with -L to follow redirects
     curl_cmd = [
@@ -304,14 +311,26 @@ def query_api(
         method,
         "-L",  # Follow redirects
         url,
-        "-H",
-        f"Authorization: Bearer {lms_api_key}",
-        "-H",
-        "Content-Type: application/json",
         "-s",  # Silent mode
         "-w",
         "\n%{http_code}",  # Append status code
     ]
+
+    # Add auth header only if auth=True
+    if auth:
+        curl_cmd.extend(
+            [
+                "-H",
+                f"Authorization: Bearer {lms_api_key}",
+            ]
+        )
+
+    curl_cmd.extend(
+        [
+            "-H",
+            "Content-Type: application/json",
+        ]
+    )
 
     if body:
         curl_cmd.extend(["-d", body])
@@ -359,10 +378,13 @@ def execute_tool(tool_name: str, args: dict, config: dict = None) -> str:
             return "Error: config not provided for query_api"
         # Handle both "path" and "endpoint" arguments (LLM may use either)
         path = args.get("path") or args.get("endpoint", "")
+        # Default auth=True, but allow override
+        auth = args.get("auth", True)
         return query_api(
             method=args.get("method", "GET"),
             path=path,
             body=args.get("body"),
+            auth=auth,
             api_base_url=config.get("agent_api_base_url"),
             lms_api_key=config.get("lms_api_key"),
         )
