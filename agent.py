@@ -20,7 +20,7 @@ from pathlib import Path
 import dotenv
 
 # Maximum tool calls per question
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = 15
 
 # Project root directory (where agent.py is located)
 PROJECT_ROOT = Path(__file__).parent.resolve()
@@ -115,6 +115,15 @@ When to use list_files:
 - Questions about what files exist (e.g., "What files are in the wiki?", "List all API router modules...")
 - First step to discover available files before reading
 
+CRITICAL RULES FOR COMPLETE ANSWERS:
+- When asked to "list all", "find all", or "what are all" - you MUST examine EVERY relevant file
+- When asked about router modules - list_files on "backend/app/routers", then read EACH .py file
+- When asked about wiki files - list_files on "wiki", then read relevant files
+- Do NOT stop after reading just one file when the question asks about multiple items
+- Continue reading files until you have examined ALL of them
+- Only provide your final answer after you have gathered information from ALL relevant files
+- If you see 5 router files, you must read all 5 before answering
+
 Guidelines:
 1. Choose the right tool for the question type
 2. For wiki questions: use list_files with path "wiki" first, then read_file
@@ -126,10 +135,12 @@ Guidelines:
 8. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts)
 
 Important:
-- Make at most 10 tool calls total
+- Make at most 15 tool calls total
+- For "list all" questions, use your tool calls efficiently to read ALL relevant files
 - If you cannot find the answer after reading relevant files or querying APIs, say so
 - Keep answers concise and accurate
 - For API errors, report the status code and error message
+- NEVER give a partial answer when asked about "all" items - always check everything first
 """
 
 
