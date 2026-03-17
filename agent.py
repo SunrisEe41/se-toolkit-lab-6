@@ -618,6 +618,40 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 file=sys.stderr,
             )
 
+            # Check for forbidden phrases that indicate incomplete answer
+            forbidden_phrases = [
+                "let me check",
+                "let me read",
+                "let me query",
+                "let me find",
+                "let me try",
+                "let me see",
+                "i should",
+                "i need to",
+                "i will ",
+                "i'll ",
+                "first, let",
+                "now let me",
+                "next i should",
+                "let me continue",
+                "let me also",
+            ]
+            answer_lower = final_answer.lower()
+            has_forbidden = any(phrase in answer_lower for phrase in forbidden_phrases)
+
+            if has_forbidden:
+                print(
+                    "Forbidden phrase detected in answer, prompting LLM to provide complete answer...",
+                    file=sys.stderr,
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Your answer contains incomplete phrases like 'Let me' or 'I should'. Provide a COMPLETE final answer based on what you have already gathered. Do not say you will do something - either you have the answer or you don't.",
+                    }
+                )
+                continue
+
             # If answer is empty but we have tool calls, the LLM might not be done
             # In this case, prompt it to provide the answer
             if not final_answer.strip() and tool_call_history:
