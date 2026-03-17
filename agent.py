@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Agent CLI - Task 2: The Documentation Agent
+AI Agent CLI - Task 3: The System Agent
 
 Usage:
     uv run agent.py "Your question here"
@@ -29,13 +29,13 @@ PROJECT_ROOT = Path(__file__).parent.resolve()
 TOOLS = [
     {
         "name": "read_file",
-        "description": "Read the contents of a file from the project repository. Use this to find specific information in wiki files.",
+        "description": "Read the contents of a file from the project repository. Use this to find specific information in wiki files or source code.",
         "parameters": {
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Relative path from project root (e.g., 'wiki/git-workflow.md')",
+                    "description": "Relative path from project root (e.g., 'wiki/git-workflow.md', 'backend/main.py')",
                 }
             },
             "required": ["path"],
@@ -49,52 +49,129 @@ TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Relative directory path from project root (e.g., 'wiki')",
+                    "description": "Relative directory path from project root (e.g., 'wiki', 'backend')",
                 }
             },
             "required": ["path"],
         },
     },
+    {
+        "name": "query_api",
+        "description": "Call the deployed backend API. Use this to query data from the database, check API endpoints, test HTTP responses, or get live system state. IMPORTANT: Always use the 'path' parameter for the API endpoint (not 'endpoint').",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string",
+                    "description": "HTTP method (GET, POST, PUT, DELETE, etc.)",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "API endpoint path starting with / (e.g., '/items/', '/analytics/completion-rate'). IMPORTANT: Always use 'path' for the endpoint, not 'endpoint'.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Optional JSON request body for POST/PUT requests",
+                },
+            },
+            "required": ["method", "path"],
+        },
+    },
 ]
 
-# System prompt for the documentation agent
-SYSTEM_PROMPT = """You are a documentation assistant that answers questions about software engineering topics using the project wiki.
+# System prompt for the system agent
+SYSTEM_PROMPT = """You are a documentation and system assistant that answers questions about software engineering topics using:
+1. The project wiki (via list_files and read_file tools)
+2. The deployed backend API (via query_api tool)
+3. The project source code (via read_file tool)
 
-You have access to two tools:
-- list_files: List files in a directory. Use this first to discover what wiki files are available.
-- read_file: Read the contents of a file. Use this to find specific information in wiki files.
+Project structure:
+- Wiki files are in the 'wiki/' directory (e.g., wiki/git.md, wiki/docker.md)
+- Backend code is in the 'backend/' directory (e.g., backend/app/main.py, backend/app/routers/)
+- Configuration files are at the root (e.g., docker-compose.yml, pyproject.toml)
+
+You have access to three tools:
+- list_files: List files in a directory. Use this first to discover what files are available.
+- read_file: Read the contents of a file. Use this to find specific information in wiki files or source code.
+- query_api: Call the backend API. Use this to query data or test API endpoints.
+
+Tool selection guidelines:
+- Use list_files to discover available files in a directory
+- Use read_file to read wiki documentation or source code
+- Use query_api to query the backend for data or test API endpoints
+
+When to use query_api:
+- Questions about data in the database (e.g., "How many items...?", "What is the completion rate...?")
+- Questions about API behavior (e.g., "What status code...?", "What does the API return...?")
+- Questions that require querying live system state
+- Questions about HTTP responses or errors from endpoints
+
+When to use read_file:
+- Questions about documentation (e.g., "According to the wiki...", "What does the wiki say...?")
+- Questions about source code (e.g., "What framework does...", "Read the source code to find...")
+- Questions about configuration (e.g., "What ports are configured...", "Read docker-compose.yml...")
+
+When to use list_files:
+- Questions about what files exist (e.g., "What files are in the wiki?", "List all API router modules...")
+- First step to discover available files before reading
 
 Guidelines:
-1. First use list_files to discover relevant wiki files (e.g., list_files with path "wiki")
-2. Then use read_file to read specific files and find the answer
-3. When you have enough information, provide a concise answer
-4. Always include the source as "wiki/filename.md#section-anchor" where section-anchor is the relevant section
-5. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts, #create-a-lab-task-issue)
+1. Choose the right tool for the question type
+2. For wiki questions: use list_files with path "wiki" first, then read_file
+3. For backend source questions: use list_files with path "backend" or read_file with "backend/..." paths
+4. For API questions: use query_api directly with method and path
+5. When you have enough information, provide a concise answer
+6. Include the source as "wiki/filename.md#section-anchor" for wiki answers
+7. For API queries, mention the endpoint used
+8. Section anchors are lowercase with hyphens (e.g., #resolving-merge-conflicts)
 
 Important:
 - Make at most 10 tool calls total
-- If you cannot find the answer after reading relevant files, say so
+- If you cannot find the answer after reading relevant files or querying APIs, say so
 - Keep answers concise and accurate
-- Always cite your source with the exact file path and section anchor
+- For API errors, report the status code and error message
 """
 
 
 def load_config() -> dict:
-    """Load configuration from .env.agent.secret file."""
-    env_path = Path(__file__).parent / ".env.agent.secret"
-    dotenv.load_dotenv(env_path)
+    """
+    Load configuration from environment files.
+
+    LLM config from .env.agent.secret
+    LMS API key from .env.docker.secret
+    AGENT_API_BASE_URL defaults to http://localhost:42002
+    """
+    # Load LLM config from .env.agent.secret
+    env_agent_path = Path(__file__).parent / ".env.agent.secret"
+    dotenv.load_dotenv(env_agent_path)
+
+    # Load LMS config from .env.docker.secret
+    env_docker_path = Path(__file__).parent / ".env.docker.secret"
+    dotenv.load_dotenv(env_docker_path, override=True)
 
     config = {
-        "api_key": os.getenv("LLM_API_KEY"),
-        "api_base": os.getenv("LLM_API_BASE"),
-        "model": os.getenv("LLM_MODEL"),
+        "llm_api_key": os.getenv("LLM_API_KEY"),
+        "llm_api_base": os.getenv("LLM_API_BASE"),
+        "llm_model": os.getenv("LLM_MODEL"),
+        "lms_api_key": os.getenv("LMS_API_KEY"),
+        "agent_api_base_url": os.getenv("AGENT_API_BASE_URL", "http://localhost:42002"),
     }
 
-    # Validate required config
-    missing = [key for key, value in config.items() if not value]
-    if missing:
+    # Validate required LLM config
+    missing_llm = [
+        key
+        for key in ["llm_api_key", "llm_api_base", "llm_model"]
+        if not config.get(key)
+    ]
+    if missing_llm:
         raise ValueError(
-            f"Missing required environment variables: {', '.join(missing)}"
+            f"Missing required LLM environment variables: {', '.join(missing_llm)}"
+        )
+
+    # LMS_API_KEY is required for query_api tool
+    if not config.get("lms_api_key"):
+        raise ValueError(
+            "Missing required LMS_API_KEY environment variable for query_api tool"
         )
 
     return config
@@ -179,13 +256,79 @@ def list_files(path: str) -> str:
         return f"Error listing directory: {e}"
 
 
-def execute_tool(tool_name: str, args: dict) -> str:
+def query_api(
+    method: str,
+    path: str,
+    body: str = None,
+    api_base_url: str = None,
+    lms_api_key: str = None,
+) -> str:
+    """
+    Call the backend API with authentication.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: API path (e.g., '/items/')
+        body: Optional JSON request body
+        api_base_url: Base URL of the API
+        lms_api_key: API key for authentication
+
+    Returns:
+        JSON string with status_code and body
+    """
+    url = f"{api_base_url}{path}"
+
+    print(f"query_api: {method} {url}", file=sys.stderr)
+
+    # Build curl command with -L to follow redirects
+    curl_cmd = [
+        "curl",
+        "-X",
+        method,
+        "-L",  # Follow redirects
+        url,
+        "-H",
+        f"Authorization: Bearer {lms_api_key}",
+        "-H",
+        "Content-Type: application/json",
+        "-s",  # Silent mode
+        "-w",
+        "\n%{http_code}",  # Append status code
+    ]
+
+    if body:
+        curl_cmd.extend(["-d", body])
+
+    result = subprocess.run(
+        curl_cmd,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    if result.returncode != 0:
+        return json.dumps({"status_code": 0, "body": f"curl error: {result.stderr}"})
+
+    # Parse response - last line is status code
+    lines = result.stdout.strip().split("\n")
+    status_code = int(lines[-1]) if lines else 0
+    body_content = "\n".join(lines[:-1]) if len(lines) > 1 else ""
+
+    response_data = {"status_code": status_code, "body": body_content}
+
+    print(f"query_api: Response status={status_code}", file=sys.stderr)
+
+    return json.dumps(response_data)
+
+
+def execute_tool(tool_name: str, args: dict, config: dict = None) -> str:
     """
     Execute a tool and return its result.
 
     Args:
         tool_name: Name of the tool to execute
         args: Arguments for the tool
+        config: Configuration dict with API keys and URLs
 
     Returns:
         Tool result as string
@@ -194,6 +337,18 @@ def execute_tool(tool_name: str, args: dict) -> str:
         return read_file(args.get("path", ""))
     elif tool_name == "list_files":
         return list_files(args.get("path", ""))
+    elif tool_name == "query_api":
+        if config is None:
+            return "Error: config not provided for query_api"
+        # Handle both "path" and "endpoint" arguments (LLM may use either)
+        path = args.get("path") or args.get("endpoint", "")
+        return query_api(
+            method=args.get("method", "GET"),
+            path=path,
+            body=args.get("body"),
+            api_base_url=config.get("agent_api_base_url"),
+            lms_api_key=config.get("lms_api_key"),
+        )
     else:
         return f"Unknown tool: {tool_name}"
 
@@ -207,11 +362,17 @@ def extract_source(answer: str, tool_call_history: list) -> str:
         tool_call_history: List of tool calls made
 
     Returns:
-        Source string (file path with section anchor)
+        Source string (file path with section anchor), or empty string
     """
     # Try to find source pattern in answer (e.g., wiki/file.md#section)
     source_pattern = r"(wiki/[\w\-/]+\.md#[\w\-]+)"
     match = re.search(source_pattern, answer)
+    if match:
+        return match.group(1)
+
+    # Try to find just file path pattern
+    file_pattern = r"(wiki/[\w\-/]+\.md|backend/[\w\-/]+\.py|[\w\-/]+\.yml)"
+    match = re.search(file_pattern, answer)
     if match:
         return match.group(1)
 
@@ -227,8 +388,8 @@ def extract_source(answer: str, tool_call_history: list) -> str:
                     return f"{path}#{section}"
                 return path
 
-    # Last resort fallback
-    return "wiki/unknown.md"
+    # For API queries or no source found, return empty string
+    return ""
 
 
 def call_llm(
@@ -291,14 +452,12 @@ def call_llm(
     return response_data
 
 
-def run_agentic_loop(api_base: str, api_key: str, model: str, question: str) -> dict:
+def run_agentic_loop(config: dict, question: str) -> dict:
     """
     Run the agentic loop: send question to LLM, execute tool calls, feed results back.
 
     Args:
-        api_base: Base URL of the API
-        api_key: API key for authentication
-        model: Model name to use
+        config: Configuration dict with API keys and URLs
         question: User's question
 
     Returns:
@@ -318,7 +477,13 @@ def run_agentic_loop(api_base: str, api_key: str, model: str, question: str) -> 
         # Call LLM with current message history
         print(f"LLM call (iteration {len(tool_call_history) + 1})", file=sys.stderr)
 
-        response_data = call_llm(api_base, api_key, model, messages, TOOLS)
+        response_data = call_llm(
+            config["llm_api_base"],
+            config["llm_api_key"],
+            config["llm_model"],
+            messages,
+            TOOLS,
+        )
 
         # Parse response
         choice = response_data["choices"][0]
@@ -357,7 +522,7 @@ def run_agentic_loop(api_base: str, api_key: str, model: str, question: str) -> 
                     file=sys.stderr,
                 )
 
-                result = execute_tool(tool_name, tool_args)
+                result = execute_tool(tool_name, tool_args, config)
 
                 # Record in history
                 tool_call_history.append(
@@ -431,21 +596,17 @@ def main() -> int:
     try:
         config = load_config()
         print(
-            f"Loaded config: model={config['model']}, api_base={config['api_base']}",
+            f"Loaded config: model={config['llm_model']}, api_base={config['llm_api_base']}",
             file=sys.stderr,
         )
+        print(f"API base URL: {config['agent_api_base_url']}", file=sys.stderr)
     except ValueError as e:
         print(f"Configuration error: {e}", file=sys.stderr)
         return 1
 
     # Run agentic loop and get output
     try:
-        output = run_agentic_loop(
-            config["api_base"],
-            config["api_key"],
-            config["model"],
-            question,
-        )
+        output = run_agentic_loop(config, question)
     except Exception as e:
         print(f"Agentic loop error: {e}", file=sys.stderr)
         return 1
