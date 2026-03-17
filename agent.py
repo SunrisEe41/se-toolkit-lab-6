@@ -109,6 +109,7 @@ When to use query_api:
 - Questions about API behavior (e.g., "What status code...?", "What does the API return...?")
 - Questions that require querying live system state
 - Questions about HTTP responses or errors from endpoints
+- When testing API endpoints, use the exact parameter format shown in the question (e.g., ?lab=lab-99)
 
 When to use read_file:
 - Questions about documentation (e.g., "According to the wiki...", "What does the wiki say...?")
@@ -133,6 +134,8 @@ CRITICAL RULES FOR COMPLETE ANSWERS:
 - IMPORTANT: Only when you have read ALL relevant files, provide the complete final answer
 - NEVER give a partial answer - the user wants complete information about ALL items
 - AFTER reading all files, you MUST provide a text answer summarizing what you found
+- NEVER say "Let me query" or "I should" - either make the tool call OR provide the final answer
+- Your answer must be complete - do not say you will do something, just do it or answer based on what you have
 
 Guidelines:
 1. Choose the right tool for the question type
