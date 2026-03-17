@@ -60,10 +60,10 @@ TOOLS = [
 
 SYSTEM_PROMPT = """You answer questions using three tools: list_files, read_file, query_api.
 - For wiki questions: list_files wiki, then read_file
-- For code questions: read_file backend/...
+- For code questions: list_files backend/app/routers, then read EACH .py file
 - For API questions: query_api
 - For bug questions: query_api THEN read_file
-Give complete answers. Do not say you will do something - just do it."""
+Give complete answers with ALL items. Do not say you will do something - just do it."""
 
 
 def load_config():
@@ -230,6 +230,18 @@ FORBIDDEN = [
     "let me see",
     "let me look",
     "let me continue",
+    "looking at",
+    "i can see",
+    "i see ",
+    "i'll check",
+    "i will check",
+    "let's check",
+    "let us check",
+    "i need to check",
+    "i should check",
+    "based on",
+    "from the",
+    "it appears",
 ]
 
 
@@ -245,7 +257,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
     ]
     tool_call_history = []
     retry_count = 0
-    max_retries = 3
+    max_retries = 8
 
     print("Starting agentic loop", file=sys.stderr)
 
