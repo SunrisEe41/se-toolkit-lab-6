@@ -121,21 +121,36 @@ When to use list_files:
 - First step to discover available files before reading
 - For backend routers: ALWAYS use list_files with path "backend/app/routers" to find all router files
 
-CRITICAL RULES FOR COMPLETE ANSWERS:
-- When asked to "list all", "find all", or "what are all" - you MUST examine EVERY relevant file
-- When asked about router modules - list_files on "backend/app/routers", then read EACH .py file
-- When asked about wiki files - list_files on "wiki", then read relevant files
-- Do NOT stop after reading just one file when the question asks about multiple items
-- Continue reading files until you have examined ALL of them
-- Only provide your final answer after you have gathered information from ALL relevant files
-- If you see 5 router files, you must read all 5 before answering
-- IMPORTANT: Do NOT start your answer with "Let me" or "First" - these indicate you are not done
-- IMPORTANT: Your response should ONLY contain tool calls until you have read ALL files
-- IMPORTANT: Only when you have read ALL relevant files, provide the complete final answer
-- NEVER give a partial answer - the user wants complete information about ALL items
-- AFTER reading all files, you MUST provide a text answer summarizing what you found
-- NEVER say "Let me query" or "I should" - either make the tool call OR provide the final answer
-- Your answer must be complete - do not say you will do something, just do it or answer based on what you have
+CRITICAL RULES - READ CAREFULLY:
+1. NEVER start your answer with "Let me", "Let's", "I'll", "I should", "I need to", "First", "Now I" - these are INCOMPLETE answers
+2. NEVER say you will do something - either DO IT (make tool call) or ANSWER based on what you already have
+3. Your final answer must be COMPLETE - no "Let me check" or "I should read" phrases
+4. If you are making tool calls, do NOT provide any answer text - only make the tool calls
+5. Only provide answer text when you have ALL the information needed and are DONE making tool calls
+6. For multi-file questions (docker-compose, Dockerfile, etc.), read ALL files BEFORE answering
+7. After reading all files, provide a COMPLETE final answer - do not say you need to read more
+8. If you cannot find the answer after checking, say "I cannot find the answer" - do not make partial statements
+
+FORBIDDEN PHRASES IN FINAL ANSWERS (never use these):
+- "Let me check..." / "Let me read..." / "Let me query..." / "Let me find..."
+- "I should..." / "I need to..." / "I will..." / "I'll..."
+- "First, let me..." / "Now let me..." / "Next I should..."
+- "Let me continue..." / "Let me also check..." / "Let me see..."
+
+CORRECT BEHAVIOR:
+- If you need more information: make tool calls ONLY (no answer text)
+- If you have enough information: provide COMPLETE answer (no tool calls)
+- Never mix tool calls and answer text in the same response
+
+Examples of WRONG answers (never do this):
+- "Let me check the Dockerfile to find out."  <-- WRONG, either read it or answer
+- "First, let me read the files."  <-- WRONG, just read them without saying
+- "I need to query the API first."  <-- WRONG, just query it
+
+Examples of RIGHT answers:
+- [Makes query_api tool call with no answer text]  <-- RIGHT
+- [After reading files] "The docker-compose.yml defines three services: app, caddy, and postgres..."  <-- RIGHT
+- "I cannot find this information in the available files."  <-- RIGHT (honest admission)
 
 Guidelines:
 1. Choose the right tool for the question type
@@ -155,6 +170,7 @@ Important:
 - Keep answers concise and accurate
 - For API errors, report the status code and error message
 - NEVER give a partial answer when asked about "all" items - always check everything first
+- YOUR FINAL ANSWER MUST BE COMPLETE AND ACTIONABLE - no "let me" phrases ever
 """
 
 
@@ -489,7 +505,7 @@ def call_llm(
         curl_cmd,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=120,  # Increased timeout for complex queries
     )
 
     print(f"curl exit code: {result.returncode}", file=sys.stderr)
