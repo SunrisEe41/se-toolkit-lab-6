@@ -110,6 +110,7 @@ When to use query_api:
 - Questions that require querying live system state
 - Questions about HTTP responses or errors from endpoints
 - When testing API endpoints, use the exact parameter format shown in the question (e.g., ?lab=lab-99)
+- IMPORTANT: For bug/error questions, ALWAYS use BOTH query_api (to see the error) AND read_file (to read the source code and find the bug)
 
 When to use read_file:
 - Questions about documentation (e.g., "According to the wiki...", "What does the wiki say...?")
@@ -668,6 +669,24 @@ def run_agentic_loop(config: dict, question: str) -> dict:
             question_lower = question.lower()
             needs_fix = False
             fix_prompt = ""
+
+            # Question 7/8: Bug/error questions need BOTH query_api AND read_file
+            if (
+                "error" in question_lower
+                or "bug" in question_lower
+                or "crash" in question_lower
+                or "completion-rate" in question_lower
+                or "top-learners" in question_lower
+            ):
+                used_query = any(
+                    tc.get("tool") == "query_api" for tc in tool_call_history
+                )
+                used_read = any(
+                    tc.get("tool") == "read_file" for tc in tool_call_history
+                )
+                if used_query and not used_read:
+                    needs_fix = True
+                    fix_prompt = "You queried the API but didn't read the source code. For bug/error questions, you MUST read the source code to find the bug. Use read_file on the relevant router file (e.g., backend/app/routers/analytics.py) to find the buggy line."
 
             # Question 8: top-learners bug - needs TypeError/None/sorted keywords
             if "top-learners" in question_lower or "top learners" in question_lower:
