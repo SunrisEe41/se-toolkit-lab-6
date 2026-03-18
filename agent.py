@@ -13,45 +13,68 @@ import dotenv
 MAX_TOOL_CALLS = 15
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
-TOOLS = [
+TOOL_DEFINITIONS = [
     {
-        "name": "read_file",
-        "description": "Read a file's contents.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Relative path from project root",
-                }
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "list_files",
-        "description": "List files in a directory.",
-        "parameters": {
-            "type": "object",
-            "properties": {"path": {"type": "string", "description": "Directory path"}},
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "query_api",
-        "description": "Call backend API.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "method": {"type": "string", "description": "HTTP method"},
-                "path": {"type": "string", "description": "API path"},
-                "body": {"type": "string", "description": "Request body"},
-                "auth": {
-                    "type": "boolean",
-                    "description": "Include auth header (default true)",
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read contents of a file from the project repository. Use this to read file contents after discovering relevant files with list_files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path from project root (e.g., 'wiki/rest-api.md')",
+                    }
                 },
+                "required": ["path"],
             },
-            "required": ["method", "path"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories at a given path in the project repository. Use this to discover files in a directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative directory path from project root (e.g., 'wiki/')",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_api",
+            "description": "Query the backend API to get real-time data or perform actions. Use this for questions about database contents, statistics, or system state. Do NOT use for static documentation questions — use read_file or list_files for those.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "method": {
+                        "type": "string",
+                        "description": "HTTP method (GET, POST, PUT, DELETE, etc.)",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "API endpoint path (e.g., '/items/', '/analytics/completion-rate')",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "JSON request body for POST/PUT requests (optional)",
+                    },
+                    "auth": {
+                        "type": "boolean",
+                        "description": "Whether to include Authorization header (default: true). Set to false to test unauthenticated access.",
+                    },
+                },
+                "required": ["method", "path"],
+            },
         },
     },
 ]
@@ -286,7 +309,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
             config["llm_api_key"],
             config["llm_model"],
             messages,
-            TOOLS,
+            TOOL_DEFINITIONS,
         )
         choice = response_data["choices"][0]
         assistant_message = choice["message"]
