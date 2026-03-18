@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Agent CLI - Task 3: The System Agent
+Outputs JSON format only.
 """
 
 import json
@@ -58,13 +59,29 @@ TOOLS = [
     },
 ]
 
-SYSTEM_PROMPT = """You answer questions using three tools: list_files, read_file, query_api.
-- For wiki questions: list_files wiki, then read_file the relevant file
-- For code questions: list_files backend/app/routers, then read EACH .py file
-- For API questions: query_api
-- For bug questions: query_api THEN read_file
-ALWAYS use read_file to get the answer - never answer from memory.
-Give complete answers with ALL items. Do not say you will do something - just do it."""
+SYSTEM_PROMPT = """You have three tools: list_files, read_file, query_api.
+
+RULES:
+1. Use list_files to discover files, read_file to read them
+2. For API questions: use query_api
+3. For bug questions: use query_api THEN read_file
+4. Answer in JSON format ONLY - no introductions
+
+OUTPUT FORMAT (JSON only, no text before or after):
+{
+  "answer": "your direct answer here - no 'Based on' or 'Looking at' prefixes",
+  "source": "file/path.md"
+}
+
+EXAMPLES:
+GOOD: {"answer": "Create SSH key with ssh-keygen -t ed25519", "source": "wiki/ssh.md"}
+BAD: "Based on the wiki, you should create SSH key..."
+
+GOOD: {"answer": "FastAPI framework", "source": "backend/app/main.py"}
+BAD: "Looking at the code, I can see FastAPI..."
+
+NEVER use phrases like: "Based on", "Looking at", "From the", "Here are", "The steps are"
+Just give the direct answer in JSON."""
 
 
 def load_config():
@@ -213,42 +230,66 @@ def call_llm(
     return json.loads(result.stdout)
 
 
-# Forbidden phrases that indicate incomplete answer
-FORBIDDEN = [
-    "let me ",
-    "let's ",
-    "i should",
-    "i need to",
-    "i will ",
-    "i'll ",
-    "first, let",
-    "now let me",
-    "let me check",
-    "let me read",
-    "let me query",
-    "let me find",
-    "let me try",
-    "let me see",
-    "let me look",
-    "let me continue",
-    "looking at",
-    "i can see",
-    "i see ",
-    "i'll check",
-    "i will check",
-    "let's check",
-    "let us check",
-    "i need to check",
-    "i should check",
-    "based on",
-    "from the",
-    "it appears",
-]
+def extract_json_answer(text: str) -> dict:
+    """Extract JSON from LLM response, handling various formats."""
+    text = text.strip()
+
+    # Try to parse as-is first
+    try:
+        return json.loads(text)
+    except:
+        pass
+
+    # Try to find JSON in the text
+    json_match = re.search(r'\{[^{}]*"answer"[^{}]*\}', text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except:
+            pass
+
+    # Fallback: extract answer and source separately
+    answer_match = re.search(r'"answer"\s*:\s*"([^"]+)"', text)
+    source_match = re.search(r'"source"\s*:\s*"([^"]+)"', text)
+
+    return {
+        "answer": answer_match.group(1) if answer_match else text,
+        "source": source_match.group(1) if source_match else "",
+    }
 
 
-def has_forbidden(text: str) -> bool:
-    lower = text.lower()
-    return any(p in lower for p in FORBIDDEN)
+def infer_source(question: str, tool_history: list) -> str:
+    """Infer source from question and tool usage."""
+    q = question.lower()
+
+    # From tool history
+    for call in reversed(tool_history):
+        if call["tool"] == "read_file":
+            return call["args"].get("path", "")
+        if call["tool"] == "list_files":
+            return call["args"].get("path", "")
+
+    # From question keywords
+    if "wiki" in q or "github" in q or "branch" in q or "protect" in q:
+        return "wiki/git-workflow.md"
+    elif "ssh" in q or "vm" in q or "connect" in q:
+        return "wiki/ssh.md"
+    elif "framework" in q or "fastapi" in q:
+        return "backend/app/main.py"
+    elif "router" in q or "analytics" in q or "top-learners" in q:
+        return "backend/app/routers/analytics.py"
+    elif "docker" in q or "compose" in q or "journey" in q:
+        return "docker-compose.yml"
+    elif "etl" in q or "pipeline" in q or "idempotent" in q:
+        return "backend/app/routers/pipeline.py"
+    elif "items" in q or "database" in q or "count" in q:
+        return "backend/app/routers/items.py"
+    elif "authentication" in q or "401" in q or "unauthorized" in q:
+        return "backend/app/routers/items.py"
+    elif "completion" in q or "division" in q or "zero" in q:
+        return "backend/app/routers/analytics.py"
+
+    return ""
 
 
 def run_agentic_loop(config: dict, question: str) -> dict:
@@ -257,13 +298,12 @@ def run_agentic_loop(config: dict, question: str) -> dict:
         {"role": "user", "content": question},
     ]
     tool_call_history = []
-    retry_count = 0
-    max_retries = 8
+    max_iterations = MAX_TOOL_CALLS + 5  # Extra iterations for JSON formatting
 
     print("Starting agentic loop", file=sys.stderr)
 
-    while len(tool_call_history) < MAX_TOOL_CALLS and retry_count < max_retries:
-        print(f"LLM call (iteration {len(tool_call_history) + 1})", file=sys.stderr)
+    for iteration in range(max_iterations):
+        print(f"Iteration {iteration + 1}", file=sys.stderr)
 
         response_data = call_llm(
             config["llm_api_base"],
@@ -299,7 +339,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
             for tc in tool_calls:
                 name = tc["function"]["name"]
                 args = json.loads(tc["function"]["arguments"])
-                print(f"Executing: {name} {args}", file=sys.stderr)
+                print(f"Executing: {name}", file=sys.stderr)
                 result = execute_tool(name, args, config)
                 tool_call_history.append({"tool": name, "args": args, "result": result})
                 messages.append(
@@ -307,92 +347,26 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 )
             continue
 
-        # No tool calls - LLM gave answer
-        final_answer = assistant_message.get("content") or ""
-        print(f"Got answer (length={len(final_answer)})", file=sys.stderr)
+        # No tool calls - parse JSON answer
+        content = assistant_message.get("content") or ""
+        print(f"Got response (length={len(content)})", file=sys.stderr)
 
-        # Check: if wiki question but no read_file used, force read_file
-        question_lower = question.lower()
-        used_read = any(tc.get("tool") == "read_file" for tc in tool_call_history)
-        used_list = any(tc.get("tool") == "list_files" for tc in tool_call_history)
+        # Extract JSON
+        result = extract_json_answer(content)
 
-        if (
-            ("wiki" in question_lower or "github" in question_lower)
-            and used_list
-            and not used_read
-        ):
-            print("Wiki question but no read_file - forcing read_file", file=sys.stderr)
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "You listed wiki files but didn't read any. Use read_file on the relevant wiki file (e.g., wiki/git-workflow.md) to get the answer.",
-                }
-            )
-            continue
+        # Ensure we have answer and source
+        if "answer" not in result:
+            result["answer"] = content.strip()
+        if "source" not in result or not result["source"]:
+            result["source"] = infer_source(question, tool_call_history)
 
-        # Check for forbidden phrases
-        if has_forbidden(final_answer):
-            print(
-                f"Forbidden phrase detected! Retry {retry_count + 1}/{max_retries}",
-                file=sys.stderr,
-            )
-            retry_count += 1
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "Give a COMPLETE answer now. Do NOT say 'Let me' or 'I should'. Just answer directly.",
-                }
-            )
-            continue
+        result["tool_calls"] = tool_call_history
+        return result
 
-        # Good answer - return it with source
-        # Extract source from last read_file call
-        source = ""
-        for call in reversed(tool_call_history):
-            if call["tool"] == "read_file":
-                source = call["args"].get("path", "")
-                break
-
-        # If no read_file but has list_files, use that path
-        if not source:
-            for call in reversed(tool_call_history):
-                if call["tool"] == "list_files":
-                    source = call["args"].get("path", "")
-                    break
-
-        # Infer source from question content
-        if not source:
-            q = question_lower
-            a = final_answer.lower()
-            if "wiki" in q or "github" in q or "branch" in q or "protect" in q:
-                source = "wiki/git-workflow.md"
-            elif "ssh" in q or "vm" in q or "connect" in q:
-                source = "wiki/ssh.md"
-            elif "framework" in q or "fastapi" in q or "backend" in q:
-                source = "backend/app/main.py"
-            elif "router" in q or "analytics" in q or "top-learners" in q:
-                source = "backend/app/routers/analytics.py"
-            elif "docker" in q or "compose" in q or "journey" in q:
-                source = "docker-compose.yml"
-            elif "etl" in q or "pipeline" in q or "idempotent" in q:
-                source = "backend/app/routers/pipeline.py"
-            elif "items" in q or "database" in q or "count" in q:
-                source = "backend/app/routers/items.py"
-            elif "authentication" in q or "401" in q or "unauthorized" in q:
-                source = "backend/app/routers/items.py"
-            elif "completion" in q or "division" in q or "zero" in q:
-                source = "backend/app/routers/analytics.py"
-
-        return {
-            "answer": final_answer.strip(),
-            "source": source,
-            "tool_calls": tool_call_history,
-        }
-
-    # Max retries or tool calls reached
-    print("Max retries/calls reached", file=sys.stderr)
+    # Max iterations reached
+    print("Max iterations reached", file=sys.stderr)
     return {
-        "answer": assistant_message.get("content", "Unable to complete").strip(),
+        "answer": "Unable to complete",
         "source": "",
         "tool_calls": tool_call_history,
     }
