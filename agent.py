@@ -40,7 +40,7 @@ AGENT_API_BASE_URL = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
 # Maximum tool calls per query
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = 15
 
 # Tool definitions for LLM function calling
 TOOL_DEFINITIONS = [
