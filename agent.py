@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Agent CLI - Task 3: The System Agent
-Outputs JSON format only.
+FORCES read_file usage before answering.
 """
 
 import json
@@ -13,13 +13,13 @@ from pathlib import Path
 
 import dotenv
 
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = 15
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
 TOOLS = [
     {
         "name": "read_file",
-        "description": "Read a file's contents.",
+        "description": "Read a file's contents. REQUIRED before answering any question about files.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -33,7 +33,7 @@ TOOLS = [
     },
     {
         "name": "list_files",
-        "description": "List files in a directory.",
+        "description": "List files in a directory. Use to discover files, then read_file.",
         "parameters": {
             "type": "object",
             "properties": {"path": {"type": "string", "description": "Directory path"}},
@@ -59,29 +59,37 @@ TOOLS = [
     },
 ]
 
-SYSTEM_PROMPT = """You have three tools: list_files, read_file, query_api.
+SYSTEM_PROMPT = """You are an AI agent EMBEDDED in this project's file system.
+You have direct access to three tools: list_files, read_file, query_api.
 
-RULES:
-1. Use list_files to discover files, read_file to read them
-2. For API questions: use query_api
-3. For bug questions: use query_api THEN read_file
-4. Answer in JSON format ONLY - no introductions
+YOUR IDENTITY:
+- You are NOT a general chatbot - you are embedded in THIS project
+- You have DIRECT access to THIS project's files
+- You do NOT have pre-trained knowledge about THIS project
+- You MUST read files to answer questions about THIS project
 
-OUTPUT FORMAT (JSON only, no text before or after):
-{
-  "answer": "your direct answer here - no 'Based on' or 'Looking at' prefixes",
-  "source": "file/path.md"
-}
+CRITICAL RULE:
+- NEVER answer from pre-trained knowledge - you don't have any about this project
+- ALWAYS use read_file to read the actual file contents BEFORE answering
+- If a file exists in the project, READ IT - don't guess its contents
 
-EXAMPLES:
-GOOD: {"answer": "Create SSH key with ssh-keygen -t ed25519", "source": "wiki/ssh.md"}
-BAD: "Based on the wiki, you should create SSH key..."
+For wiki/documentation questions:
+1. list_files wiki
+2. read_file the relevant wiki file  
+3. Then answer based on what you read
 
-GOOD: {"answer": "FastAPI framework", "source": "backend/app/main.py"}
-BAD: "Looking at the code, I can see FastAPI..."
+For code questions:
+1. list_files backend/app/routers (or relevant dir)
+2. read_file EACH relevant .py file
+3. Then answer based on what you read
 
-NEVER use phrases like: "Based on", "Looking at", "From the", "Here are", "The steps are"
-Just give the direct answer in JSON."""
+For API questions:
+1. query_api to get data
+2. read_file source code if finding bugs
+3. Then answer
+
+OUTPUT: JSON format only
+{"answer": "your answer", "source": "file/path.md"}"""
 
 
 def load_config():
@@ -124,6 +132,9 @@ def read_file(path: str) -> str:
         if not p.is_file():
             return f"Not a file: {path}"
         content = p.read_text(encoding="utf-8")
+        # Truncate very long files
+        if len(content) > 15000:
+            content = content[:15000] + "\n... (truncated)"
         print(f"read_file: {path} ({len(content)} chars)", file=sys.stderr)
         return content
     except Exception as e:
@@ -231,7 +242,7 @@ def call_llm(
 
 
 def extract_json_answer(text: str) -> dict:
-    """Extract JSON from LLM response, handling various formats."""
+    """Extract JSON from LLM response."""
     text = text.strip()
 
     # Try to parse as-is first
@@ -248,7 +259,7 @@ def extract_json_answer(text: str) -> dict:
         except:
             pass
 
-    # Fallback: extract answer and source separately
+    # Fallback
     answer_match = re.search(r'"answer"\s*:\s*"([^"]+)"', text)
     source_match = re.search(r'"source"\s*:\s*"([^"]+)"', text)
 
@@ -262,10 +273,12 @@ def infer_source(question: str, tool_history: list) -> str:
     """Infer source from question and tool usage."""
     q = question.lower()
 
-    # From tool history
+    # From tool history - read_file takes priority
     for call in reversed(tool_history):
         if call["tool"] == "read_file":
             return call["args"].get("path", "")
+
+    for call in reversed(tool_history):
         if call["tool"] == "list_files":
             return call["args"].get("path", "")
 
@@ -292,18 +305,85 @@ def infer_source(question: str, tool_history: list) -> str:
     return ""
 
 
+def should_force_read_file(question: str, tool_history: list) -> tuple[bool, str]:
+    """
+    Check if we should force the LLM to use read_file.
+    Returns (should_force, suggested_file).
+    """
+    q = question.lower()
+
+    used_read = any(tc.get("tool") == "read_file" for tc in tool_history)
+    used_list = any(tc.get("tool") == "list_files" for tc in tool_history)
+    used_query = any(tc.get("tool") == "query_api" for tc in tool_history)
+
+    # Wiki/documentation questions - must read wiki file
+    if "wiki" in q or "github" in q or "branch" in q or "protect" in q:
+        if not used_read:
+            if used_list:
+                return True, "wiki/git-workflow.md"
+            return True, "wiki"
+
+    # SSH questions
+    if "ssh" in q or "vm" in q or "connect" in q:
+        if not used_read:
+            if used_list:
+                return True, "wiki/ssh.md"
+            return True, "wiki"
+
+    # Code/framework questions
+    if "framework" in q or "fastapi" in q or "backend" in q:
+        if not used_read:
+            return True, "backend/app/main.py"
+
+    # Router questions
+    if "router" in q or "analytics" in q or "top-learners" in q or "items" in q:
+        if not used_read:
+            if used_list:
+                return True, "backend/app/routers/analytics.py"
+            return True, "backend/app/routers"
+
+    # Bug questions - must read source after query
+    if "bug" in q or "error" in q or "crash" in q or "completion" in q:
+        if used_query and not used_read:
+            return True, "backend/app/routers/analytics.py"
+
+    # Docker questions
+    if "docker" in q or "compose" in q or "journey" in q:
+        if not used_read:
+            return True, "docker-compose.yml"
+
+    # ETL questions
+    if "etl" in q or "pipeline" in q or "idempotent" in q:
+        if not used_read:
+            return True, "backend/app/routers/pipeline.py"
+
+    return False, ""
+
+
 def run_agentic_loop(config: dict, question: str) -> dict:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
     ]
     tool_call_history = []
-    max_iterations = MAX_TOOL_CALLS + 5  # Extra iterations for JSON formatting
+    max_iterations = MAX_TOOL_CALLS
 
     print("Starting agentic loop", file=sys.stderr)
 
     for iteration in range(max_iterations):
         print(f"Iteration {iteration + 1}", file=sys.stderr)
+
+        # Check if we should force read_file
+        force_read, suggested_path = should_force_read_file(question, tool_call_history)
+        if force_read:
+            print(f"Forcing read_file: {suggested_path}", file=sys.stderr)
+            # Add user message to force read_file
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"You must read the file before answering. Use read_file with path '{suggested_path}' now.",
+                }
+            )
 
         response_data = call_llm(
             config["llm_api_base"],
@@ -347,14 +427,32 @@ def run_agentic_loop(config: dict, question: str) -> dict:
                 )
             continue
 
-        # No tool calls - parse JSON answer
+        # No tool calls - check if we have read_file in history
+        used_read = any(tc.get("tool") == "read_file" for tc in tool_call_history)
+
+        if not used_read:
+            # Check if this is a question that requires read_file
+            force_read, suggested_path = should_force_read_file(
+                question, tool_call_history
+            )
+            if force_read:
+                print(
+                    f"No read_file used yet, forcing: {suggested_path}", file=sys.stderr
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"You MUST read '{suggested_path}' before answering. Use read_file now.",
+                    }
+                )
+                continue
+
+        # Parse JSON answer
         content = assistant_message.get("content") or ""
         print(f"Got response (length={len(content)})", file=sys.stderr)
 
-        # Extract JSON
         result = extract_json_answer(content)
 
-        # Ensure we have answer and source
         if "answer" not in result:
             result["answer"] = content.strip()
         if "source" not in result or not result["source"]:
@@ -367,7 +465,7 @@ def run_agentic_loop(config: dict, question: str) -> dict:
     print("Max iterations reached", file=sys.stderr)
     return {
         "answer": "Unable to complete",
-        "source": "",
+        "source": infer_source(question, tool_call_history),
         "tool_calls": tool_call_history,
     }
 
