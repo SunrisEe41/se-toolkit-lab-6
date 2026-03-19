@@ -40,7 +40,7 @@ AGENT_API_BASE_URL = os.getenv("AGENT_API_BASE_URL", "http://localhost:42002")
 PROJECT_ROOT = Path(__file__).parent.resolve()
 
 # Maximum tool calls per query
-MAX_TOOL_CALLS = 20
+MAX_TOOL_CALLS = 10
 
 # Tool definitions for LLM function calling
 TOOL_DEFINITIONS = [
@@ -165,7 +165,7 @@ def read_file(path: str) -> str:
         path: Relative path from project root
 
     Returns:
-        File contents as string (truncated to 5000 chars), or error message
+        File contents as string, or error message
     """
     if not is_safe_path(path):
         return f"Error: Invalid path '{path}'. Path traversal not allowed."
@@ -179,11 +179,7 @@ def read_file(path: str) -> str:
         return f"Error: '{path}' is not a file."
 
     try:
-        content = file_path.read_text(encoding="utf-8")
-        # Truncate to 5000 chars to avoid LLM timeout
-        if len(content) > 5000:
-            content = content[:5000] + "\n... (truncated to 5000 chars)"
-        return content
+        return file_path.read_text(encoding="utf-8")
     except Exception as e:
         return f"Error reading file: {e}"
 
@@ -416,84 +412,6 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
     # Track tool calls for output
     tool_calls_log: list[dict[str, Any]] = []
 
-    # Pre-check: force specific tools for specific questions
-    question_lower = question.lower()
-
-    # Q2: Framework question - force read backend/app/main.py
-    if "framework" in question_lower:
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use read_file with path 'backend/app/main.py' to find the web framework.",
-            }
-        )
-
-    # Q8: Docker journey - force read docker-compose.yml first
-    if "journey" in question_lower or (
-        "docker" in question_lower and "compose" in question_lower
-    ):
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use read_file with path 'docker-compose.yml' to see the services.",
-            }
-        )
-
-    # Q8 (top-learners): Analytics bug - force query_api first
-    if "top-learners" in question_lower or (
-        "analytics" in question_lower and "crash" in question_lower
-    ):
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use query_api with path '/analytics/top-learners?lab=lab-99' to see the error.",
-            }
-        )
-
-    # Q10: Docker cleanup wiki - force read wiki/docker.md
-    if "docker" in question_lower and "clean" in question_lower:
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use read_file with path 'wiki/docker.md'. Look for 'cleanup', 'remove', 'delete', or 'down' commands.",
-            }
-        )
-
-    # Q12: Dockerfile multi-stage - force read backend/Dockerfile
-    if "dockerfile" in question_lower:
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use read_file with path 'backend/Dockerfile'. Look for 'FROM' statements - multiple FROM = multi-stage build.",
-            }
-        )
-
-    # Q14: Learners count - force query_api
-    if "learners" in question_lower and (
-        "count" in question_lower
-        or "how many" in question_lower
-        or "distinct" in question_lower
-    ):
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use query_api with method='GET' and path='/learners/' to get the list, then count the results.",
-            }
-        )
-
-    # Q16: Analytics bug - force read analytics.py with specific hints
-    if "analytics" in question_lower and (
-        "bug" in question_lower
-        or "risky" in question_lower
-        or "unsafe" in question_lower
-    ):
-        messages.append(
-            {
-                "role": "user",
-                "content": "Use read_file with path 'backend/app/routers/analytics.py'. Look for: 1) '/' or 'division' (risk: divide by zero), 2) 'sorted(' (risk: None values crash sorted).",
-            }
-        )
-
     # Agentic loop
     for iteration in range(MAX_TOOL_CALLS):
         # Call LLM with tool definitions
@@ -553,190 +471,6 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
             # LLM returned content without tool calls - final answer
             # Note: Use (choice.get("content") or "") because LLM may return content: null
             answer = choice.get("content") or ""
-
-            # Check for forbidden phrases - retry if found
-            forbidden = ["looking at", "based on", "from the", "i can see", "let me"]
-            if any(p in answer.lower() for p in forbidden):
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Answer directly without 'Looking at', 'Based on', or similar phrases. Just give the answer.",
-                    }
-                )
-                continue
-
-            # Question 2: Framework - ensure FastAPI answer
-            if "framework" in question.lower() and "fastapi" not in answer.lower():
-                used_read = any(tc["tool"] == "read_file" for tc in tool_calls_log)
-                if not used_read:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Read backend/app/main.py to find the framework. Look for 'from fastapi import'.",
-                        }
-                    )
-                    continue
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "The backend uses FastAPI. See backend/app/main.py: 'from fastapi import FastAPI' and 'app = FastAPI()'.",
-                    }
-                )
-                continue
-
-            # Question 8: Docker journey - ensure complete path
-            if (
-                "docker" in question.lower() or "journey" in question.lower()
-            ) and "caddy" not in answer.lower():
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Trace: Browser → Caddy (42002) → FastAPI (8000) → auth → router → SQLAlchemy → PostgreSQL (5432). Read docker-compose.yml, Caddyfile, Dockerfile, main.py.",
-                    }
-                )
-                continue
-
-            # Question 10: Docker cleanup wiki
-            if "docker" in question.lower() and "clean" in question.lower():
-                used_read = any(tc["tool"] == "read_file" for tc in tool_calls_log)
-                if not used_read:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Read wiki/docker.md for cleanup steps. Look for 'docker-compose down', 'docker rm', or 'prune'.",
-                        }
-                    )
-                    continue
-                # Has read but answer lacks keywords
-                if (
-                    "down" not in answer.lower()
-                    and "rm" not in answer.lower()
-                    and "prune" not in answer.lower()
-                    and "remove" not in answer.lower()
-                ):
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Docker cleanup: 'docker-compose down', 'docker rm', 'docker rmi', 'docker system prune'. Mention these.",
-                        }
-                    )
-                    continue
-
-            # Question 12: Dockerfile multi-stage
-            if "dockerfile" in question.lower():
-                used_read = any(tc["tool"] == "read_file" for tc in tool_calls_log)
-                if not used_read:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Read backend/Dockerfile. Count 'FROM' statements.",
-                        }
-                    )
-                    continue
-                if (
-                    "multi" not in answer.lower()
-                    and "stage" not in answer.lower()
-                    and "multiple" not in answer.lower()
-                ):
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Multiple FROM = multi-stage build. Keeps image small by copying only artifacts.",
-                        }
-                    )
-                    continue
-
-            # Question 8: Docker journey - ensure complete path (generic docker question)
-            if (
-                ("docker" in question.lower() or "journey" in question.lower())
-                and "caddy" not in answer.lower()
-                and "dockerfile" not in question.lower()
-            ):
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Trace: Browser → Caddy (42002) → FastAPI (8000) → auth → router → SQLAlchemy → PostgreSQL (5432). Read docker-compose.yml, Caddyfile, Dockerfile, main.py.",
-                    }
-                )
-                continue
-            # Question 14: Learners count
-            if "learners" in question.lower() and (
-                "count" in question.lower()
-                or "how many" in question.lower()
-                or "distinct" in question.lower()
-            ):
-                used_query = any(tc["tool"] == "query_api" for tc in tool_calls_log)
-                if not used_query:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Query GET /learners/ endpoint and count the array length.",
-                        }
-                    )
-                    continue
-
-            # Question 16: Analytics bug
-            if "analytics" in question.lower() and (
-                "bug" in question.lower()
-                or "risky" in question.lower()
-                or "unsafe" in question.lower()
-            ):
-                used_read = any(tc["tool"] == "read_file" for tc in tool_calls_log)
-                if not used_read:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Read backend/app/routers/analytics.py. Find '/' (division) and 'sorted(' calls.",
-                        }
-                    )
-                    continue
-                if (
-                    "division" not in answer.lower()
-                    and "sorted" not in answer.lower()
-                    and "none" not in answer.lower()
-                    and "typeerror" not in answer.lower()
-                ):
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Risky: 1) Division (passed_learners/total_learners) = division by zero. 2) sorted(rows, key=r.avg_score) crashes on None (TypeError).",
-                        }
-                    )
-                    continue
-
-            # Question 3: SSH - ensure wiki source
-            if "ssh" in question.lower() and "wiki" not in answer.lower():
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Read wiki/ssh.md for SSH connection steps.",
-                    }
-                )
-                continue
-
-            # Question 8 specific fix - ensure TypeError/None/sorted keywords
-            if (
-                "top-learners" in question.lower()
-                and "typeerror" not in answer.lower()
-                and "none" not in answer.lower()
-            ):
-                used_read = any(tc["tool"] == "read_file" for tc in tool_calls_log)
-                if not used_read:
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": "Read backend/app/routers/analytics.py to find the bug in the sorted() function.",
-                        }
-                    )
-                    continue
-                # Has read file but still no keywords - provide hint
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "The bug is: sorted(rows, key=lambda r: r.avg_score) crashes when avg_score is None. This causes TypeError.",
-                    }
-                )
-                continue
 
             # Extract source from answer (look for source reference)
             source = ""
