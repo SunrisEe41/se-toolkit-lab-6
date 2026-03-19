@@ -130,6 +130,7 @@ def _run_agent(question: str, timeout: int = 60):
 # Matching logic (mirrors autochecker evaluation)
 # ---------------------------------------------------------------------------
 
+
 def _match(text: str, rule: dict) -> bool:
     """Check if text satisfies the matching rule."""
     text_lower = text.lower()
@@ -148,12 +149,12 @@ def _match(text: str, rule: dict) -> bool:
 
     if "numeric_gt" in rule:
         numbers = re.findall(r"\d+(?:\.\d+)?", text)
-        return any(float(n) > rule["numeric_gt"] for n in numbers)
+        return any(float(n) > rule["numeric_gt"] for n in numbers if n)
 
     if "numeric_range" in rule:
         lo, hi = rule["numeric_range"]
         numbers = re.findall(r"\d+(?:\.\d+)?", text)
-        return any(lo <= float(n) <= hi for n in numbers)
+        return any(lo <= float(n) <= hi for n in numbers if n)
 
     return False
 
@@ -161,7 +162,7 @@ def _match(text: str, rule: dict) -> bool:
 def _format_expected(expected: dict) -> str:
     """Human-readable description of the expected match."""
     if "contains" in expected:
-        return f"answer should contain: \"{expected['contains']}\""
+        return f'answer should contain: "{expected["contains"]}"'
     if "contains_all" in expected:
         return f"answer should contain all of: {expected['contains_all']}"
     if "any_of" in expected:
@@ -209,7 +210,10 @@ def _check_question(q: dict, data: dict) -> tuple[bool, str]:
         # Rubric-only question — locally we can only do a basic length check.
         # The autochecker bot uses LLM-based judging for more accurate scoring.
         if len(answer.split()) < 20:
-            return False, f"    {YELLOW}Answer too short for a reasoning question (bot uses LLM judge){RESET}"
+            return (
+                False,
+                f"    {YELLOW}Answer too short for a reasoning question (bot uses LLM judge){RESET}",
+            )
 
     # Check source if expected_source is defined
     expected_source = q.get("expected_source")
@@ -243,8 +247,10 @@ def _check_question(q: dict, data: dict) -> tuple[bool, str]:
 def main():
     parser = argparse.ArgumentParser(description="Run agent evaluation benchmark")
     parser.add_argument(
-        "--index", type=int, default=None,
-        help="Run a single question by index (for debugging)"
+        "--index",
+        type=int,
+        default=None,
+        help="Run a single question by index (for debugging)",
     )
     args = parser.parse_args()
 
