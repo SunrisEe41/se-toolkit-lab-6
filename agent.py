@@ -420,7 +420,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "To find the web framework, use read_file with path 'backend/app/main.py' and look for 'from fastapi import'.",
+                "content": "Use read_file with path 'backend/app/main.py' to find the web framework.",
             }
         )
 
@@ -431,7 +431,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "To trace the request journey, first read_file 'docker-compose.yml' to see the services, then read 'backend/Dockerfile', 'caddy/Caddyfile', and 'backend/app/main.py'.",
+                "content": "Use read_file with path 'docker-compose.yml' to see the services.",
             }
         )
 
@@ -440,7 +440,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use list_files with path 'wiki' to find Docker-related wiki files, then read_file the cleanup section.",
+                "content": "Use read_file with path 'wiki/docker.md' for Docker cleanup steps.",
             }
         )
 
@@ -449,7 +449,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use read_file with path 'backend/Dockerfile' and look for multiple FROM statements (multi-stage build).",
+                "content": "Use read_file with path 'backend/Dockerfile' and look for multiple FROM statements.",
             }
         )
 
@@ -462,7 +462,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use read_file with path 'backend/app/routers/analytics.py' and look for: 1) division operations (division by zero risk), 2) sorted() with None values (TypeError risk).",
+                "content": "Use read_file with path 'backend/app/routers/analytics.py' to find risky operations.",
             }
         )
 
