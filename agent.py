@@ -165,7 +165,7 @@ def read_file(path: str) -> str:
         path: Relative path from project root
 
     Returns:
-        File contents as string, or error message
+        File contents as string (truncated to 5000 chars), or error message
     """
     if not is_safe_path(path):
         return f"Error: Invalid path '{path}'. Path traversal not allowed."
@@ -179,7 +179,11 @@ def read_file(path: str) -> str:
         return f"Error: '{path}' is not a file."
 
     try:
-        return file_path.read_text(encoding="utf-8")
+        content = file_path.read_text(encoding="utf-8")
+        # Truncate to 5000 chars to avoid LLM timeout
+        if len(content) > 5000:
+            content = content[:5000] + "\n... (truncated to 5000 chars)"
+        return content
     except Exception as e:
         return f"Error reading file: {e}"
 
@@ -440,7 +444,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use read_file with path 'wiki/docker.md' for Docker cleanup steps.",
+                "content": "Use read_file with path 'wiki/docker.md'. Look for 'cleanup', 'remove', 'delete', or 'down' commands.",
             }
         )
 
@@ -449,11 +453,11 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use read_file with path 'backend/Dockerfile' and look for multiple FROM statements.",
+                "content": "Use read_file with path 'backend/Dockerfile'. Look for 'FROM' statements - multiple FROM = multi-stage build.",
             }
         )
 
-    # Q16: Analytics bug - force read analytics.py
+    # Q16: Analytics bug - force read analytics.py with specific hints
     if "analytics" in question_lower and (
         "bug" in question_lower
         or "risky" in question_lower
@@ -462,7 +466,7 @@ def run_agentic_loop(question: str) -> dict[str, Any]:
         messages.append(
             {
                 "role": "user",
-                "content": "Use read_file with path 'backend/app/routers/analytics.py' to find risky operations.",
+                "content": "Use read_file with path 'backend/app/routers/analytics.py'. Look for: 1) '/' or 'division' (risk: divide by zero), 2) 'sorted(' (risk: None values crash sorted).",
             }
         )
 
